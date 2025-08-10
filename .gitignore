@@ -1,0 +1,25 @@
+# Dataset (never commit the raw CSVs)
+data/
+*.csv
+
+# Model artifacts / pipeline outputs
+*.pkl
+*.joblib
+*.model
+results/
+checkpoints/
+*.h5
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
