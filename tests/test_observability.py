@@ -31,12 +31,27 @@ def test_the_pipeline_reports_its_progress_to_the_logger(synthetic_data_dir, cap
     assert "selected_features=" in messages
 
 
-def test_the_package_logger_is_silent_by_default():
-    """A library that configures logging on import steals the application's."""
-    logger = logging.getLogger(LOGGER_NAME)
-    assert logger.handlers, "the package must install its own NullHandler"
-    assert all(isinstance(h, logging.NullHandler) for h in logger.handlers)
-    assert logger.level == logging.NOTSET
+def test_the_package_logger_is_silent_on_a_fresh_import():
+    """A library that configures logging on import steals the application's.
+
+    Checked in a subprocess on purpose: the property is about what *importing*
+    does, and any test that already called configure_logging in this process
+    would make an in-process assertion pass or fail by test order.
+    """
+    import subprocess
+    import sys
+
+    probe = (
+        "import logging, lolwin.cli;"
+        "log = logging.getLogger('lolwin');"
+        "print(log.level, [type(h).__name__ for h in log.handlers])"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    level, handlers = completed.stdout.strip().split(" ", 1)
+    assert int(level) == logging.NOTSET
+    assert handlers == "['NullHandler']"
 
 
 @pytest.mark.parametrize("level", LOG_LEVELS)
@@ -108,3 +123,28 @@ def test_no_traceback_reaches_the_user(tmp_path, capsys):
 def test_verbosity_flags_map_to_levels(synthetic_data_dir, flags, expected):
     main(["--data-dir", str(synthetic_data_dir), "--no-tune", *flags])
     assert logging.getLogger(LOGGER_NAME).level == getattr(logging, expected)
+
+
+# --- the installed entry points ---------------------------------------------
+
+
+def test_the_module_entry_point_runs(synthetic_data_dir):
+    """python -m lolwin must work, which no in-process test can prove."""
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lolwin",
+            "--data-dir",
+            str(synthetic_data_dir),
+            "--no-tune",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == EXIT_OK, completed.stderr
+    assert "| Role |" in completed.stdout

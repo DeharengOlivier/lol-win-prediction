@@ -8,6 +8,7 @@ of the multi-hundred-MB CSVs, which are not committed.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,23 @@ import pandas as pd
 import pytest
 
 from lolwin import ROLES
+from lolwin.observability import LOGGER_NAME
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging():
+    """Undo configure_logging after every test.
+
+    Logging is process-global: without this, whichever test configured it first
+    decides what every later test observes, and assertions about the default
+    state pass or fail by ordering.
+    """
+    logger = logging.getLogger(LOGGER_NAME)
+    handlers = list(logger.handlers)
+    level = logger.level
+    yield
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
 
 
 def _make_synthetic_players(n_games: int = 400, seed: int = 0) -> pd.DataFrame:
