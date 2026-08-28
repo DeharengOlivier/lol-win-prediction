@@ -47,8 +47,20 @@ LEAKY_COLUMNS: list[str] = [
     "baron_kills",
 ]
 
-# Identifier / metadata columns that must never enter X.
-META_COLUMNS: list[str] = ["win", "role", "player_name", "player_id", "game_id"]
+# Identifier and metadata columns that must never enter X. The team columns are
+# on this list because the obvious way to build a candidate set is "every
+# numeric column", and that sweeps in team_id, which names the side of the map
+# rather than describing anything the player did.
+META_COLUMNS: list[str] = [
+    "win",
+    "role",
+    "player_name",
+    "player_id",
+    "game_id",
+    "team_id",
+    "team_name",
+    "team_acronym",
+]
 
 
 def add_derived_features(players: pd.DataFrame) -> pd.DataFrame:
@@ -61,7 +73,9 @@ def add_derived_features(players: pd.DataFrame) -> pd.DataFrame:
       assists vs solo kills (separates carries from enablers).
     - ``gold_per_level`` : gold efficiency relative to experience gained.
     - ``gold_per_kill``  : how much gold the player accrued per kill (farming vs
-      fighting income).
+      fighting income). Kills are floored at 1, so a player with no kills reads
+      as one with a single kill: a known flattening at the very bottom of the
+      range, kept because the alternative is a NaN the model cannot use.
     - ``spree_per_kill`` : how concentrated the kills were (snowballing).
     - ``log_gold``       : gold is right-skewed; the log stabilises it.
 
@@ -171,10 +185,17 @@ def select_features(
     Returns:
         The retained feature names, ordered by descending MI.
     """
-    candidates = ALL_FEATURES if candidate_features is None else candidate_features
+    offered = ALL_FEATURES if candidate_features is None else candidate_features
+    # The exclusion is applied to the candidates, before any ranking. Filtering
+    # afterwards would mean handing the estimator columns it must never keep:
+    # wasted work on the numeric ones, and a crash on 'role', which is a string.
+    candidates = [name for name in offered if name not in FORBIDDEN_FEATURES]
+    if not candidates:
+        return []
+
     ranked = mutual_information(df, candidates, target, random_state)
     selected = ranked.loc[ranked["mi_score"] >= threshold, "feature"].tolist()
     # Guard against a too-aggressive threshold wiping out all features.
     if not selected:
         selected = ranked["feature"].head(FALLBACK_FEATURE_COUNT).tolist()
-    return [feature for feature in selected if feature not in FORBIDDEN_FEATURES]
+    return selected

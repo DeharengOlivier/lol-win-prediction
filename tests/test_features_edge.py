@@ -102,3 +102,29 @@ def test_all_features_is_base_plus_derived():
     assert ALL_FEATURES == BASE_FEATURES + DERIVED_FEATURES
     # No accidental overlap between base and derived names.
     assert set(BASE_FEATURES).isdisjoint(DERIVED_FEATURES)
+
+
+def test_team_identifiers_are_refused_as_candidates(synthetic_players):
+    """The guard must cover the columns a caller is most likely to sweep in.
+
+    The obvious way to build a candidate list is "every numeric column", and
+    that pulls in team_id, which identifies the side rather than describing the
+    player. The notebook used to filter those out by hand, one name at a time,
+    which is a guard that works until someone forgets an entry.
+    """
+    df = add_derived_features(synthetic_players)
+    numeric = [
+        column
+        for column in df.columns
+        if df[column].dtype.kind in "if" and column not in LEAKY_COLUMNS
+    ]
+    selected = select_features(df, candidate_features=numeric, threshold=0.0)
+    for identifier in ("team_id", "player_id", "game_id", "win"):
+        assert identifier not in selected
+
+
+def test_every_meta_column_is_refused_whatever_the_threshold(synthetic_players):
+    df = add_derived_features(synthetic_players)
+    present = [column for column in META_COLUMNS if column in df.columns]
+    selected = select_features(df, candidate_features=present, threshold=0.0)
+    assert selected == []
