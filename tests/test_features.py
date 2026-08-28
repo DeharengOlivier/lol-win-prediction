@@ -9,7 +9,6 @@ from lolwin.features import (
     LEAKY_COLUMNS,
     META_COLUMNS,
     add_derived_features,
-    build_feature_matrix,
     mutual_information,
     select_features,
 )
@@ -44,9 +43,10 @@ def test_select_features_returns_subset(synthetic_players):
     assert len(feats) >= 1
 
 
-def test_build_feature_matrix_excludes_leaky_and_meta(synthetic_players):
+def test_select_features_excludes_leaky_and_meta(synthetic_players):
     """The core leakage guarantee: no team-objective or id column ever selected."""
-    _, feats = build_feature_matrix(synthetic_players)
+    df = add_derived_features(synthetic_players)
+    feats = select_features(df)
     forbidden = set(LEAKY_COLUMNS) | set(META_COLUMNS)
     assert forbidden.isdisjoint(feats), f"Leaky/meta column leaked into {feats}"
 

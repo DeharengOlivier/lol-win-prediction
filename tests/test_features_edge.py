@@ -9,58 +9,53 @@ from lolwin.features import (
     ALL_FEATURES,
     BASE_FEATURES,
     DERIVED_FEATURES,
+    FALLBACK_FEATURE_COUNT,
     LEAKY_COLUMNS,
     META_COLUMNS,
     add_derived_features,
-    build_feature_matrix,
     mutual_information,
     select_features,
 )
 
 
-def test_no_leaky_column_in_feature_matrix_even_at_zero_threshold(synthetic_players):
+def test_no_leaky_column_is_selected_even_at_a_zero_threshold(synthetic_players):
     """Hard guarantee: LEAKY_COLUMNS never appear in the selected features,
 
     even if a degenerate threshold would otherwise let everything through.
     """
     df = add_derived_features(synthetic_players)
-    # Selection itself only considers ALL_FEATURES, but build_feature_matrix adds
-    # a final safety net. Verify both layers.
     selected = select_features(df, candidate_features=ALL_FEATURES, threshold=0.0)
     assert set(LEAKY_COLUMNS).isdisjoint(selected)
 
-    _, feats = build_feature_matrix(synthetic_players)
-    for col in LEAKY_COLUMNS:
-        assert col not in feats
 
-
-def test_meta_columns_never_in_feature_matrix(synthetic_players):
-    _, feats = build_feature_matrix(synthetic_players)
+def test_meta_columns_are_never_selected(synthetic_players):
+    df = add_derived_features(synthetic_players)
+    feats = select_features(df)
     for col in META_COLUMNS:
         assert col not in feats
 
 
-def test_build_feature_matrix_safety_net_strips_injected_leaky_feature(synthetic_players):
-    """If a leaky column were somehow proposed, the final filter must remove it.
+def test_a_leaky_column_offered_as_a_candidate_is_still_refused(synthetic_players):
+    """The exclusion holds against the caller, not only against the default set.
 
-    We simulate that by passing candidate_features that include a leaky column
-    through the lower-level select_features, then confirm build_feature_matrix's
-    forbidden filter would have removed it.
+    tower_kills separates the classes perfectly in the synthetic data, so a
+    selector that only ranked by mutual information would put it first. It is
+    filtered inside select_features, which is the single function that decides
+    the model's inputs.
     """
     df = add_derived_features(synthetic_players)
-    # tower_kills is perfectly predictive in the synthetic data, so a naive
-    # selector with a leaky candidate set would keep it.
-    leaky_selected = select_features(
+    ranked = mutual_information(df, ["tower_kills", "player_kills"])
+    assert ranked.iloc[0]["feature"] == "tower_kills"  # it WOULD rank first
+
+    selected = select_features(
         df, candidate_features=["tower_kills", "player_kills"], threshold=0.0
     )
-    assert "tower_kills" in leaky_selected  # confirms it WOULD be selected
-    # The production path must still exclude it.
-    _, safe_feats = build_feature_matrix(synthetic_players)
-    assert "tower_kills" not in safe_feats
+    assert selected == ["player_kills"]
 
 
-def test_selected_features_are_subset_of_all_features(synthetic_players):
-    _, feats = build_feature_matrix(synthetic_players)
+def test_selected_features_are_a_subset_of_all_features(synthetic_players):
+    df = add_derived_features(synthetic_players)
+    feats = select_features(df)
     assert set(feats).issubset(set(ALL_FEATURES))
     assert len(feats) >= 1
 
@@ -70,15 +65,15 @@ def test_select_features_threshold_filters_monotonically(synthetic_players):
     loose = select_features(df, threshold=0.0)
     strict = select_features(df, threshold=0.05)
     # A stricter threshold can never keep more features than a looser one
-    # (modulo the >=5 fallback, which only triggers when strict would be empty).
-    assert len(strict) <= len(loose) or len(strict) == 5
+    # (modulo the fallback, which only triggers when strict would be empty).
+    assert len(strict) <= len(loose) or len(strict) == FALLBACK_FEATURE_COUNT
 
 
 def test_select_features_fallback_when_threshold_too_high(synthetic_players):
     df = add_derived_features(synthetic_players)
-    # An impossibly high threshold wipes everything -> fallback keeps top 5.
+    # An impossibly high threshold wipes everything -> fallback keeps the best few.
     feats = select_features(df, threshold=10.0)
-    assert len(feats) == 5
+    assert len(feats) == FALLBACK_FEATURE_COUNT
 
 
 def test_mutual_information_output_shape(synthetic_players):

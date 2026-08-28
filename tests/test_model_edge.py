@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from lolwin.features import build_feature_matrix
+from lolwin.features import add_derived_features
 from lolwin.model import (
     DEFAULT_PARAM_GRID,
+    UNTUNED_PARAMS,
     _grid_combinations,
+    split_by_game,
     train_role,
     tune_role,
 )
+
+
+def _prepared(players, **split_kwargs):
+    split = split_by_game(add_derived_features(players), **split_kwargs)
+    return split, split.select_features()
 
 
 def test_grid_combinations_cardinality():
@@ -24,48 +32,33 @@ def test_grid_combinations_cardinality():
 def test_default_grid_expands_to_expected_size():
     combos = _grid_combinations(DEFAULT_PARAM_GRID)
     expected = 1
-    for v in DEFAULT_PARAM_GRID.values():
-        expected *= len(v)
+    for values in DEFAULT_PARAM_GRID.values():
+        expected *= len(values)
     assert len(combos) == expected
 
 
-def test_grouped_split_no_game_straddles_boundary(synthetic_players):
-    """Reinforced version of the split test across multiple roles and seeds."""
-    df, feats = build_feature_matrix(synthetic_players)
-    for role in ("Top", "Support"):
-        for seed in (1, 13):
-            rm = train_role(df, role, feats, tune=False, random_state=seed)
-            df_role = df[df["role"] == role].reset_index(drop=True)
-            test_games = set(df_role.loc[rm.X_test.index, "game_id"])
-            train_idx = df_role.index.difference(rm.X_test.index)
-            train_games = set(df_role.loc[train_idx, "game_id"])
-            assert test_games.isdisjoint(train_games), (
-                f"game_id straddled split for role={role} seed={seed}"
-            )
+@pytest.mark.parametrize("seed", [1, 13])
+def test_no_game_straddles_the_split(synthetic_players, seed):
+    split, _ = _prepared(synthetic_players, random_state=seed)
+    assert set(split.train["game_id"]).isdisjoint(set(split.test["game_id"]))
 
 
 def test_test_set_fraction_is_respected(synthetic_players):
-    df, feats = build_feature_matrix(synthetic_players)
-    rm = train_role(df, "Mid", feats, tune=False, test_size=0.3)
-    df_role = df[df["role"] == "Mid"]
-    n_test = len(rm.X_test)
-    # Grouped split is per-game; allow a tolerance band around 30%.
-    frac = n_test / len(df_role)
-    assert 0.2 <= frac <= 0.4
+    split, _ = _prepared(synthetic_players, test_size=0.3)
+    total = len(split.train) + len(split.test)
+    # The split is per game, so allow a tolerance band around 30%.
+    assert 0.2 <= len(split.test) / total <= 0.4
 
 
-def test_train_role_x_test_columns_are_exactly_features(synthetic_players):
-    df, feats = build_feature_matrix(synthetic_players)
-    rm = train_role(df, "Jungle", feats, tune=False)
-    assert list(rm.X_test.columns) == feats
-    # No leaky/meta columns survive into the model's input space.
-    assert "game_id" not in rm.X_test.columns
-    assert "tower_kills" not in rm.X_test.columns
+def test_a_role_with_no_training_row_is_refused(synthetic_players):
+    split, feats = _prepared(synthetic_players)
+    with pytest.raises(ValueError, match="Unranked"):
+        train_role(split, "Unranked", feats, tune=False)
 
 
 def test_tune_role_returns_params_from_grid(synthetic_players):
-    df, feats = build_feature_matrix(synthetic_players)
-    df_role = df[df["role"] == "Bot"].reset_index(drop=True)
+    split, feats = _prepared(synthetic_players)
+    train = split.train[split.train["role"] == "Bot"]
     small_grid = {
         "n_estimators": [50],
         "learning_rate": [0.1],
@@ -74,9 +67,9 @@ def test_tune_role_returns_params_from_grid(synthetic_players):
         "colsample_bytree": [1.0],
     }
     best_params, auc = tune_role(
-        df_role[feats],
-        df_role["win"],
-        df_role["game_id"],
+        train[feats],
+        train["win"],
+        train["game_id"],
         param_grid=small_grid,
         n_splits=3,
     )
@@ -87,9 +80,9 @@ def test_tune_role_returns_params_from_grid(synthetic_players):
     assert auc > 0.6
 
 
-def test_tune_role_picks_best_of_two_configs(synthetic_players):
-    df, feats = build_feature_matrix(synthetic_players)
-    df_role = df[df["role"] == "Top"].reset_index(drop=True)
+def test_tune_role_picks_one_of_the_offered_configs(synthetic_players):
+    split, feats = _prepared(synthetic_players)
+    train = split.train[split.train["role"] == "Top"]
     grid = {
         "n_estimators": [10, 200],
         "learning_rate": [0.1],
@@ -98,17 +91,26 @@ def test_tune_role_picks_best_of_two_configs(synthetic_players):
         "colsample_bytree": [1.0],
     }
     best_params, _ = tune_role(
-        df_role[feats], df_role["win"], df_role["game_id"], param_grid=grid, n_splits=3
+        train[feats], train["win"], train["game_id"], param_grid=grid, n_splits=3
     )
-    # best_params must be one of the two candidate configs.
     assert best_params["n_estimators"] in (10, 200)
 
 
-def test_no_tune_uses_default_config_and_fits(synthetic_players):
-    df, feats = build_feature_matrix(synthetic_players)
-    rm = train_role(df, "Support", feats, tune=False)
-    assert rm.best_params["n_estimators"] == 300
-    assert np.isnan(rm.cv_auc)  # no CV ran
-    # Model is fitted and can predict.
-    proba = rm.model.predict_proba(rm.X_test)
-    assert proba.shape == (len(rm.X_test), 2)
+def test_no_tune_uses_the_documented_default_and_fits(synthetic_players):
+    split, feats = _prepared(synthetic_players)
+    role_model = train_role(split, "Support", feats, tune=False)
+    assert role_model.best_params == UNTUNED_PARAMS
+    assert np.isnan(role_model.cv_auc)  # no CV ran
+    held_out = split.test[split.test["role"] == "Support"]
+    proba = role_model.model.predict_proba(held_out[feats])
+    assert proba.shape == (len(held_out), 2)
+
+
+def test_the_untuned_defaults_are_not_shared_between_models(synthetic_players):
+    """best_params must be a copy, so mutating one model cannot affect the next."""
+    split, feats = _prepared(synthetic_players)
+    first = train_role(split, "Top", feats, tune=False)
+    first.best_params["max_depth"] = 99
+    second = train_role(split, "Mid", feats, tune=False)
+    assert second.best_params["max_depth"] == UNTUNED_PARAMS["max_depth"]
+    assert UNTUNED_PARAMS["max_depth"] != 99

@@ -1,21 +1,28 @@
-"""Per-role XGBoost training with leakage-free hyperparameter tuning.
+"""The train/test protocol and per-role XGBoost training.
 
-This module fixes the methodological leakage of the original notebook, where
-hyperparameters were chosen by looking at the *test set* and early stopping used
-the test set as its eval set. Here:
+Everything fitted lives on the training side of one boundary, and the boundary
+is cut once, along whole games:
 
-- Each role gets its own train / test split, grouped by ``game_id`` so the two
-  opposing players of the same game never straddle the split.
+- :func:`split_by_game` partitions the rows by ``game_id`` before anything is
+  fitted, so the two opposing players of a match never straddle the split and
+  every role is held out on the same games.
+- :meth:`GameSplit.select_features` is the only selection entry point the
+  pipeline uses. It can physically only see ``split.train``, which is what makes
+  "the selector never reads a test label" a property of the design rather than
+  a habit. (The pipeline used to select on the whole frame.)
 - Hyperparameters are chosen by stratified, grouped K-fold cross-validation on
-  the *training* data only, scored by ROC-AUC. The test set is touched exactly
-  once, at the very end, for reporting.
-- All randomness is seeded for reproducibility.
+  the training rows only, scored by ROC-AUC.
+- A :class:`RoleModel` deliberately does not carry its test set. Evaluation is
+  handed the held-out frame explicitly, so a caller cannot score a model on data
+  the model brought along with it.
+- All randomness is seeded.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from itertools import product
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -27,12 +34,16 @@ from sklearn.model_selection import (
 from xgboost import XGBClassifier
 
 from . import RANDOM_STATE, ROLES
+from .features import select_features
 
-# Modest grid. Kept small on purpose: with ~75k rows per role the gains from a
-# huge grid are marginal and the runtime cost is real. These ranges cover the
-# usual sweet spot for tabular XGBoost (depth, learning rate, trees, and a touch
-# of regularisation via subsample / colsample).
-DEFAULT_PARAM_GRID: dict[str, list] = {
+# Share of the *games* held out for the final, single evaluation.
+DEFAULT_TEST_SIZE = 0.2
+
+# Modest grid. Kept small on purpose: with ~60k training rows per role the gains
+# from a huge grid are marginal and the runtime cost is real. These ranges cover
+# the usual sweet spot for tabular XGBoost (depth, learning rate, trees, and a
+# touch of regularisation via subsample / colsample).
+DEFAULT_PARAM_GRID: dict[str, list[Any]] = {
     "n_estimators": [300, 500],
     "learning_rate": [0.05, 0.1],
     "max_depth": [4, 6],
@@ -40,28 +51,113 @@ DEFAULT_PARAM_GRID: dict[str, list] = {
     "colsample_bytree": [0.8],
 }
 
+# Used when tuning is switched off, for smoke tests and fast iteration.
+UNTUNED_PARAMS: dict[str, Any] = {
+    "n_estimators": 300,
+    "learning_rate": 0.1,
+    "max_depth": 5,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+}
+
+
+@dataclass(frozen=True)
+class GameSplit:
+    """A train/test partition of the player rows, cut along whole games.
+
+    Attributes:
+        train: Rows every fitted decision is allowed to read.
+        test: Rows touched exactly once, at reporting time.
+    """
+
+    train: pd.DataFrame
+    test: pd.DataFrame
+
+    def select_features(self, **kwargs: Any) -> list[str]:
+        """Choose the model's features, reading the training rows only.
+
+        This is the pipeline's selection entry point precisely because it has no
+        way to reach :attr:`test`.
+
+        Args:
+            **kwargs: Forwarded to :func:`lolwin.features.select_features`
+                (``candidate_features``, ``threshold``, ``random_state``).
+
+        Returns:
+            The retained feature names, ordered by descending mutual information.
+        """
+        return select_features(self.train, **kwargs)
+
+
+def split_by_game(
+    df: pd.DataFrame,
+    *,
+    test_size: float = DEFAULT_TEST_SIZE,
+    random_state: int = RANDOM_STATE,
+) -> GameSplit:
+    """Partition rows into train and test by holding out whole games.
+
+    One split for all five roles, so the per-role numbers and the overall row
+    describe the same held-out matches. Splitting per role, as this package used
+    to, produced the same partition here only because every role saw the same
+    game list under the same seed: correct by accident, not by construction.
+
+    Complexity: O(rows), plus O(g log g) to order the g distinct games.
+
+    Args:
+        df: Player rows carrying a ``game_id`` column.
+        test_size: Share of the *games* to hold out, within (0, 1).
+        random_state: Seed.
+
+    Returns:
+        The partition.
+
+    Raises:
+        ValueError: ``test_size`` is outside (0, 1), which would leave one side
+            of the split empty.
+    """
+    if not 0 < test_size < 1:
+        raise ValueError(f"test_size must be within (0, 1), got {test_size}.")
+    splitter = GroupShuffleSplit(
+        n_splits=1, test_size=test_size, random_state=random_state
+    )
+    train_idx, test_idx = next(splitter.split(df, groups=df["game_id"]))
+    return GameSplit(
+        train=df.iloc[train_idx].reset_index(drop=True),
+        test=df.iloc[test_idx].reset_index(drop=True),
+    )
+
 
 @dataclass
 class RoleModel:
-    """A trained model for one role plus everything needed to reuse it."""
+    """A trained model for one role plus what is needed to reuse and report it.
+
+    Attributes:
+        role: Which role this model was fitted for.
+        model: The fitted classifier.
+        features: The feature columns it expects, in order.
+        best_params: The hyperparameters it was fitted with.
+        cv_auc: Mean cross-validated ROC-AUC on the training rows, or NaN when
+            tuning was skipped.
+    """
 
     role: str
     model: XGBClassifier
     features: list[str]
-    best_params: dict
+    best_params: dict[str, Any]
     cv_auc: float
-    # Test indices kept so :mod:`evaluate` can score on the exact held-out rows.
-    X_test: pd.DataFrame = field(repr=False)
-    y_test: pd.Series = field(repr=False)
 
 
-def _grid_combinations(param_grid: dict[str, list]) -> list[dict]:
-    """Expand a param grid dict into a list of concrete param dicts."""
+def _grid_combinations(param_grid: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    """Expand a param grid dict into a list of concrete param dicts.
+
+    Complexity: O(prod(len(v) for v in param_grid.values())), the grid size.
+    """
     keys, values = zip(*param_grid.items(), strict=True)
     return [dict(zip(keys, combo, strict=True)) for combo in product(*values)]
 
 
-def _make_classifier(params: dict, random_state: int) -> XGBClassifier:
+def _make_classifier(params: dict[str, Any], random_state: int) -> XGBClassifier:
     """Build an XGBClassifier with consistent, fixed base settings."""
     return XGBClassifier(
         **params,
@@ -76,29 +172,32 @@ def tune_role(
     X: pd.DataFrame,
     y: pd.Series,
     groups: pd.Series,
-    param_grid: dict[str, list] = DEFAULT_PARAM_GRID,
+    param_grid: dict[str, list[Any]] | None = None,
     n_splits: int = 4,
     random_state: int = RANDOM_STATE,
-) -> tuple[dict, float]:
-    """Grid-search hyperparameters using grouped, stratified CV on TRAIN only.
+) -> tuple[dict[str, Any], float]:
+    """Grid-search hyperparameters using grouped, stratified CV on training rows.
 
-    The scoring metric is ROC-AUC (not accuracy), because it is threshold-free
-    and a better summary of ranking quality on a balanced binary target.
+    The scoring metric is ROC-AUC rather than accuracy, because it is
+    threshold-free and a better summary of ranking quality on a balanced target.
+
+    Complexity: ``grid size x n_splits`` model fits.
 
     Args:
         X, y: Training features and target for a single role.
         groups: ``game_id`` per row, so CV folds never split a game.
-        param_grid: Hyperparameter search space.
+        param_grid: Search space; :data:`DEFAULT_PARAM_GRID` when omitted.
         n_splits: Number of CV folds.
         random_state: Seed.
 
     Returns:
         ``(best_params, best_cv_auc)``.
     """
+    grid = DEFAULT_PARAM_GRID if param_grid is None else param_grid
     cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-    best_params: dict = {}
+    best_params: dict[str, Any] = {}
     best_auc = -np.inf
-    for params in _grid_combinations(param_grid):
+    for params in _grid_combinations(grid):
         model = _make_classifier(params, random_state)
         # cross_val_score handles fit/predict per fold; groups prevents leakage.
         scores = cross_val_score(
@@ -108,64 +207,55 @@ def tune_role(
         if mean_auc > best_auc:
             best_auc = mean_auc
             best_params = params
-    return best_params, best_auc
+    return best_params, float(best_auc)
 
 
 def train_role(
-    df: pd.DataFrame,
+    split: GameSplit,
     role: str,
     features: list[str],
-    param_grid: dict[str, list] = DEFAULT_PARAM_GRID,
+    param_grid: dict[str, list[Any]] | None = None,
     target: str = "win",
-    test_size: float = 0.2,
     random_state: int = RANDOM_STATE,
     tune: bool = True,
 ) -> RoleModel:
-    """Train one role's model end to end: split, tune on train, fit, hold out test.
+    """Tune and fit one role's model on the training side of ``split``.
+
+    Complexity: one fit, plus ``grid size x n_splits`` fits when ``tune`` is set.
 
     Args:
-        df: Feature DataFrame (must contain ``features``, ``role``, ``game_id``).
+        split: The partition produced by :func:`split_by_game`. Only
+            :attr:`GameSplit.train` is read.
         role: Which role to train ("Top", "Jungle", ...).
         features: Feature column names to use.
-        param_grid: Search space (ignored if ``tune`` is False).
+        param_grid: Search space; ignored when ``tune`` is False.
         target: Target column.
-        test_size: Fraction of *games* held out for the final test set.
         random_state: Seed.
-        tune: If False, skip the grid search and use a sensible default config
-            (useful for quick smoke tests).
+        tune: If False, skip the grid search and use :data:`UNTUNED_PARAMS`.
 
     Returns:
-        A :class:`RoleModel` carrying the fitted model and its held-out test set.
-    """
-    df_role = df[df["role"] == role].reset_index(drop=True)
-    X = df_role[features]
-    y = df_role[target]
-    groups = df_role["game_id"]
+        The fitted :class:`RoleModel`.
 
-    # Grouped split: opposing players from the same game stay on the same side
-    # of the train/test boundary. Measured impact is small (<0.002 AUC) but it
-    # removes any doubt about same-game leakage.
-    splitter = GroupShuffleSplit(
-        n_splits=1, test_size=test_size, random_state=random_state
-    )
-    train_idx, test_idx = next(splitter.split(X, y, groups))
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-    groups_train = groups.iloc[train_idx]
+    Raises:
+        ValueError: No training row carries this role.
+    """
+    train = split.train[split.train["role"] == role]
+    if train.empty:
+        raise ValueError(f"No training row for role {role!r}.")
+
+    X_train = train[features]
+    y_train = train[target]
 
     if tune:
         best_params, cv_auc = tune_role(
-            X_train, y_train, groups_train, param_grid, random_state=random_state
+            X_train,
+            y_train,
+            train["game_id"],
+            param_grid,
+            random_state=random_state,
         )
     else:
-        best_params = {
-            "n_estimators": 300,
-            "learning_rate": 0.1,
-            "max_depth": 5,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-        }
-        cv_auc = float("nan")
+        best_params, cv_auc = dict(UNTUNED_PARAMS), float("nan")
 
     model = _make_classifier(best_params, random_state)
     model.fit(X_train, y_train)
@@ -173,33 +263,29 @@ def train_role(
     return RoleModel(
         role=role,
         model=model,
-        features=features,
+        features=list(features),
         best_params=best_params,
         cv_auc=cv_auc,
-        X_test=X_test,
-        y_test=y_test,
     )
 
 
 def train_all_roles(
-    df: pd.DataFrame,
+    split: GameSplit,
     features: list[str],
     roles: tuple[str, ...] = ROLES,
-    param_grid: dict[str, list] = DEFAULT_PARAM_GRID,
+    param_grid: dict[str, list[Any]] | None = None,
     random_state: int = RANDOM_STATE,
     tune: bool = True,
-    verbose: bool = True,
 ) -> dict[str, RoleModel]:
     """Train one :class:`RoleModel` per role and return them keyed by role."""
     models: dict[str, RoleModel] = {}
     for role in roles:
-        if verbose:
-            print(f"Training role: {role}")
         models[role] = train_role(
-            df, role, features, param_grid, random_state=random_state, tune=tune
+            split,
+            role,
+            features,
+            param_grid,
+            random_state=random_state,
+            tune=tune,
         )
-        if verbose:
-            rm = models[role]
-            print(f"  best params: {rm.best_params}")
-            print(f"  cv ROC-AUC : {rm.cv_auc:.4f}")
     return models

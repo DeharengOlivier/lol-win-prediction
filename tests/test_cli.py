@@ -9,29 +9,29 @@ from lolwin.data import load_players
 
 
 def test_run_pipeline_on_synthetic_dir(synthetic_data_dir):
-    # tune=False keeps it fast; the pipeline still exercises load -> features ->
-    # per-role train -> evaluate on the synthetic CSV.
-    table, models, features = run_pipeline(data_dir=synthetic_data_dir, tune=False)
-    assert set(models) == {"Top", "Jungle", "Mid", "Bot", "Support"}
-    assert len(table) == 6  # 5 roles + Overall
-    assert features, "pipeline must select at least one feature"
+    # tune=False keeps it fast; the pipeline still exercises load -> derive ->
+    # split -> select -> per-role train -> evaluate on the synthetic CSV.
+    result = run_pipeline(data_dir=synthetic_data_dir, tune=False)
+    assert set(result.models) == {"Top", "Jungle", "Mid", "Bot", "Support"}
+    assert len(result.results) == 6  # 5 roles + Overall
+    assert result.features, "pipeline must select at least one feature"
     # No leaky column slipped through the full pipeline.
-    assert "tower_kills" not in features
+    assert "tower_kills" not in result.features
 
 
 def test_run_pipeline_writes_csv(synthetic_data_dir, tmp_path):
     out = tmp_path / "nested" / "results.csv"
-    table, _, _ = run_pipeline(data_dir=synthetic_data_dir, tune=False, output_csv=out)
+    result = run_pipeline(data_dir=synthetic_data_dir, tune=False, output_csv=out)
     assert out.exists()
     written = pd.read_csv(out)
     # Round-trips: same number of rows as the in-memory table.
-    assert len(written) == len(table)
+    assert len(written) == len(result.results)
     assert "roc_auc" in written.columns
 
 
 def test_run_pipeline_with_sample_frac(synthetic_data_dir):
-    table, _, _ = run_pipeline(data_dir=synthetic_data_dir, sample_frac=0.5, tune=False)
-    assert len(table) == 6
+    result = run_pipeline(data_dir=synthetic_data_dir, sample_frac=0.5, tune=False)
+    assert len(result.results) == 6
 
 
 def test_load_players_roundtrips_synthetic_csv(synthetic_data_dir):
