@@ -9,7 +9,7 @@
 #     pip install -r requirements.txt     # the exact verified set
 
 # Runtime
-pandas==3.0.3
+pandas==3.0.5
 numpy==2.4.6
 scikit-learn==1.9.0
 xgboost==3.3.0
