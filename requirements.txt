@@ -22,6 +22,14 @@ seaborn==0.13.2
 jupyter==1.1.1
 nbformat==5.10.4
 
+# Transitive pins of the notebook stack. Not imported by anything here, but the
+# versions pip resolves on its own carry known vulnerabilities that pip-audit
+# reports: 46 advisories across jupyterlab, mistune and pillow at the time of
+# writing. Pinned to the fixed releases so a fresh install of this lock is clean.
+jupyterlab==4.6.3
+mistune==3.3.4
+pillow==12.3.0
+
 # Development
 pytest==9.1.0
 pytest-cov==7.1.0
