@@ -1,0 +1,20 @@
+INFO lolwin.cli loaded rows=374490 games=37449 win_rate=0.5000 excluded_leaky=6
+INFO lolwin.cli split held_out_games=7490 held_out_rows=74900 train_rows=299590
+INFO lolwin.cli selected_features=15 names=kda_ratio,player_assists,player_deaths,assists_share,largest_killing_spree,spree_per_kill,player_kills,gold_per_kill,log_gold,largest_multi_kill,gold_earned,gold_per_level,level,total_damage_dealt_to_champions,total_damage_taken
+INFO lolwin.cli trained role=Top cv_auc=0.9508 params={'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 4, 'subsample': 0.8, 'colsample_bytree': 0.8}
+INFO lolwin.cli trained role=Jungle cv_auc=0.9635 params={'n_estimators': 500, 'learning_rate': 0.05, 'max_depth': 4, 'subsample': 0.8, 'colsample_bytree': 0.8}
+INFO lolwin.cli trained role=Mid cv_auc=0.9572 params={'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 4, 'subsample': 0.8, 'colsample_bytree': 0.8}
+INFO lolwin.cli trained role=Bot cv_auc=0.9672 params={'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 4, 'subsample': 0.8, 'colsample_bytree': 0.8}
+INFO lolwin.cli trained role=Support cv_auc=0.9583 params={'n_estimators': 500, 'learning_rate': 0.05, 'max_depth': 4, 'subsample': 0.8, 'colsample_bytree': 0.8}
+INFO lolwin.cli wrote results path=results/metrics_full.csv
+| Role | n_test | Accuracy | ROC-AUC | F1 |
+|---|---|---|---|---|
+| Top | 14980 | 0.8797 | 0.9541 | 0.8799 |
+| Jungle | 14980 | 0.8950 | 0.9630 | 0.8954 |
+| Mid | 14980 | 0.8858 | 0.9586 | 0.8864 |
+| Bot | 14980 | 0.8987 | 0.9656 | 0.8988 |
+| Support | 14980 | 0.8882 | 0.9585 | 0.8894 |
+| Overall | 74900 | 0.8895 | 0.9600 | 0.8900 |
+
+wall clock: 292.1 s
+exit: 0

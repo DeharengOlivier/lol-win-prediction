@@ -2,13 +2,19 @@
 data/
 *.csv
 
-# Model artifacts / pipeline outputs
+# Model artifacts
 *.pkl
 *.joblib
 *.model
-results/
+*.ubj
 checkpoints/
 *.h5
+artifacts/
+
+# Published run outputs ARE tracked: the README quotes their numbers, and a
+# number whose artifact is not in the repository is a number nobody can check.
+!results/
+!results/*.csv
 
 # Python
 __pycache__/
