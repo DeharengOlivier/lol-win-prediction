@@ -192,6 +192,22 @@ def test_sample_frac_is_rejected_before_the_file_is_read(tmp_path, bad):
 # --- the neighbouring reader -------------------------------------------------
 
 
+def test_a_missing_metadata_file_says_which_one(tmp_path):
+    _written(tmp_path, _table())
+    with pytest.raises(FileNotFoundError, match=r"game_metadata\.csv"):
+        load_players(tmp_path, with_metadata=True)
+
+
+def test_metadata_without_a_date_column_still_merges(tmp_path):
+    pd.DataFrame({"game_id": [0], "league_name": ["TestLeague"]}).to_csv(
+        tmp_path / "game_metadata.csv", index=False
+    )
+    _written(tmp_path, _table())
+    players = load_players(tmp_path, with_metadata=True)
+    assert "league_name" in players.columns
+    assert "date" not in players.columns
+
+
 def test_metadata_without_a_game_id_is_rejected(tmp_path):
     pd.DataFrame({"date": ["2024-01-01"]}).to_csv(
         tmp_path / "game_metadata.csv", index=False

@@ -161,6 +161,51 @@ def test_no_staging_directory_survives_a_failed_save(trained, tmp_path, monkeypa
     assert list(tmp_path.iterdir()) == []
 
 
+def test_a_failed_swap_restores_the_previous_artifact(trained, tmp_path, monkeypatch):
+    """The last step can fail too: the old artifact must come back."""
+    import os
+
+    _, _, models = trained
+    directory = tmp_path / "artifacts"
+    save_models(models, directory)
+    intact = (directory / MANIFEST_FILE).read_text()
+
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:  # 1 = move the old copy aside, 2 = move the new one in
+            raise OSError("rename failed")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("lolwin.persistence.os.replace", flaky)
+    with pytest.raises(OSError, match="rename failed"):
+        save_models(models, directory, overwrite=True)
+
+    assert (directory / MANIFEST_FILE).read_text() == intact
+    assert set(load_models(directory)) == set(models)
+    assert not any(p.name.startswith("artifacts.") for p in tmp_path.iterdir())
+
+
+def test_a_manifest_entry_without_a_role_is_refused(trained, tmp_path):
+    _, _, models = trained
+    directory = tmp_path / "artifacts"
+    save_models(models, directory)
+    (directory / MANIFEST_FILE).write_text(json.dumps({"models": [{"file": "Bot.ubj"}]}))
+    with pytest.raises(DataFormatError, match="'role'"):
+        load_models(directory)
+
+
+def test_a_manifest_entry_that_is_not_an_object_is_refused(trained, tmp_path):
+    _, _, models = trained
+    directory = tmp_path / "artifacts"
+    save_models(models, directory)
+    (directory / MANIFEST_FILE).write_text(json.dumps({"models": ["Bot"]}))
+    with pytest.raises(DataFormatError):
+        load_models(directory)
+
+
 def test_saving_no_model_is_refused(tmp_path):
     with pytest.raises(ValueError, match="no models"):
         save_models({}, tmp_path / "artifacts")
