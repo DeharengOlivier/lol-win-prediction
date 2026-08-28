@@ -34,6 +34,7 @@ from .model import (
     train_all_roles,
 )
 from .observability import configure_logging, get_logger
+from .persistence import save_models
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -67,6 +68,8 @@ def run_pipeline(
     sample_frac: float | None = None,
     tune: bool = True,
     output_csv: str | Path | None = None,
+    save_to: str | Path | None = None,
+    overwrite: bool = False,
     test_size: float = DEFAULT_TEST_SIZE,
     random_state: int = RANDOM_STATE,
 ) -> PipelineResult:
@@ -80,6 +83,8 @@ def run_pipeline(
         sample_frac: Fraction of games to keep, for fast iteration.
         tune: Whether to grid-search hyperparameters.
         output_csv: Where to write the results table, if anywhere.
+        save_to: Directory to persist the trained models into, if anywhere.
+        overwrite: Allow ``save_to`` to replace an existing artifact.
         test_size: Share of games held out.
         random_state: Seed.
 
@@ -89,6 +94,7 @@ def run_pipeline(
     Raises:
         FileNotFoundError: The dataset is not where it was expected.
         DataFormatError: The dataset does not match the required schema.
+        FileExistsError: ``save_to`` exists and ``overwrite`` was not set.
         ValueError: An argument is outside its accepted range.
     """
     players = load_players(
@@ -128,6 +134,9 @@ def run_pipeline(
             role_model.best_params,
         )
 
+    if save_to is not None:
+        save_models(models, save_to, overwrite=overwrite)
+
     table = evaluate_all(models, split.test)
 
     if output_csv is not None:
@@ -163,6 +172,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-csv", default=None, help="Optional path to save the results table."
     )
+    parser.add_argument(
+        "--save-models",
+        default=None,
+        metavar="DIR",
+        help="Persist the trained models into DIR so a tuned run can be reused.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow --save-models to replace an existing artifact.",
+    )
     parser.add_argument("--random-state", type=int, default=RANDOM_STATE)
     parser.add_argument(
         "-v",
@@ -189,10 +209,12 @@ def main(argv: list[str] | None = None) -> int:
             sample_frac=args.sample,
             tune=not args.no_tune,
             output_csv=args.output_csv,
+            save_to=args.save_models,
+            overwrite=args.overwrite,
             test_size=args.test_size,
             random_state=args.random_state,
         )
-    except (FileNotFoundError, DataFormatError, ValueError) as error:
+    except (FileNotFoundError, FileExistsError, DataFormatError, ValueError) as error:
         print(f"lolwin: {error}", file=sys.stderr)
         return EXIT_BAD_INPUT
     # The CLI is the last line of defence: nothing below it turns a crash into
