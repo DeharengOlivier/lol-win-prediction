@@ -20,7 +20,7 @@ shap==0.52.0
 matplotlib==3.11.0
 seaborn==0.13.2
 jupyter==1.1.1
-nbformat==5.10.4
+nbformat==5.11.1
 
 # Transitive pins of the notebook stack. Not imported by anything here, but the
 # versions pip resolves on its own carry known vulnerabilities that pip-audit
