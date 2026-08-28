@@ -19,7 +19,11 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, cross_val_score
+from sklearn.model_selection import (
+    GroupShuffleSplit,
+    StratifiedGroupKFold,
+    cross_val_score,
+)
 from xgboost import XGBClassifier
 
 from . import RANDOM_STATE, ROLES
@@ -53,8 +57,8 @@ class RoleModel:
 
 def _grid_combinations(param_grid: dict[str, list]) -> list[dict]:
     """Expand a param grid dict into a list of concrete param dicts."""
-    keys, values = zip(*param_grid.items())
-    return [dict(zip(keys, combo)) for combo in product(*values)]
+    keys, values = zip(*param_grid.items(), strict=True)
+    return [dict(zip(keys, combo, strict=True)) for combo in product(*values)]
 
 
 def _make_classifier(params: dict, random_state: int) -> XGBClassifier:
@@ -141,7 +145,9 @@ def train_role(
     # Grouped split: opposing players from the same game stay on the same side
     # of the train/test boundary. Measured impact is small (<0.002 AUC) but it
     # removes any doubt about same-game leakage.
-    splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
+    splitter = GroupShuffleSplit(
+        n_splits=1, test_size=test_size, random_state=random_state
+    )
     train_idx, test_idx = next(splitter.split(X, y, groups))
     X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
     y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]

@@ -60,13 +60,17 @@ def _make_synthetic_players(n_games: int = 400, seed: int = 0) -> pd.DataFrame:
                         "player_deaths": deaths,
                         "player_assists": assists,
                         "total_minions_killed": max(0, int(rng.normal(180, 40))),
-                        "gold_earned": max(1, int(rng.normal(13000 if won else 10000, 2000))),
+                        "gold_earned": max(
+                            1, int(rng.normal(13000 if won else 10000, 2000))
+                        ),
                         "level": max(1, int(rng.normal(15 if won else 13, 2))),
                         "total_damage_dealt": int(rng.normal(80000, 20000)),
                         "total_damage_dealt_to_champions": int(rng.normal(20000, 5000)),
                         "total_damage_taken": int(rng.normal(25000, 6000)),
                         "wards_placed": max(0, int(rng.normal(12, 4))),
-                        "largest_killing_spree": max(0, int(rng.normal(4 if won else 1, 2))),
+                        "largest_killing_spree": max(
+                            0, int(rng.normal(4 if won else 1, 2))
+                        ),
                         "largest_multi_kill": max(0, int(rng.normal(2 if won else 1, 1))),
                     }
                 )

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lolwin.evaluate import RoleMetrics, evaluate_all, evaluate_role, format_results
+from lolwin.evaluate import evaluate_all, evaluate_role, format_results
 from lolwin.features import build_feature_matrix
 from lolwin.model import RoleModel, train_all_roles, train_role
 

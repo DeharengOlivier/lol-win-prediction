@@ -21,4 +21,4 @@ from __future__ import annotations
 ROLES: tuple[str, ...] = ("Top", "Jungle", "Mid", "Bot", "Support")
 RANDOM_STATE: int = 42
 
-__all__ = ["ROLES", "RANDOM_STATE"]
+__all__ = ["RANDOM_STATE", "ROLES"]

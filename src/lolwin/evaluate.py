@@ -52,16 +52,14 @@ def evaluate_role(role_model: RoleModel, threshold: float = 0.5) -> RoleMetrics:
     )
 
 
-def evaluate_all(
-    models: dict[str, RoleModel], threshold: float = 0.5
-) -> pd.DataFrame:
+def evaluate_all(models: dict[str, RoleModel], threshold: float = 0.5) -> pd.DataFrame:
     """Evaluate every role and return a tidy results table.
 
     Columns: role, n_test, accuracy, roc_auc, f1. A final ``Overall`` row gives
     the sample-size-weighted average of each metric.
     """
     rows: list[dict] = []
-    for role, rm in models.items():
+    for rm in models.values():
         m = evaluate_role(rm, threshold)
         rows.append(
             {

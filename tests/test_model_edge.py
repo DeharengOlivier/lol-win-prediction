@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 
 from lolwin.features import build_feature_matrix
 from lolwin.model import (

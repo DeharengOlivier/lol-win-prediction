@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from lolwin.features import (
     ALL_FEATURES,
@@ -98,9 +97,7 @@ def test_add_derived_features_does_not_mutate_input(synthetic_players):
 
 def test_derived_features_all_zero_kills_assists_deaths():
     # A pathological row: 0 kills, 0 assists, 0 deaths, 0 level, 0 gold.
-    df = pd.DataFrame(
-        [{c: 0 for c in BASE_FEATURES}]
-    )
+    df = pd.DataFrame([{c: 0 for c in BASE_FEATURES}])
     out = add_derived_features(df)
     vals = out.loc[0, DERIVED_FEATURES].to_numpy(dtype=float)
     assert np.isfinite(vals).all()

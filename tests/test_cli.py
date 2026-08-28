@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from lolwin.cli import run_pipeline
 from lolwin.data import load_players
@@ -12,9 +11,7 @@ from lolwin.data import load_players
 def test_run_pipeline_on_synthetic_dir(synthetic_data_dir):
     # tune=False keeps it fast; the pipeline still exercises load -> features ->
     # per-role train -> evaluate on the synthetic CSV.
-    table, models, features = run_pipeline(
-        data_dir=synthetic_data_dir, tune=False
-    )
+    table, models, features = run_pipeline(data_dir=synthetic_data_dir, tune=False)
     assert set(models) == {"Top", "Jungle", "Mid", "Bot", "Support"}
     assert len(table) == 6  # 5 roles + Overall
     assert features, "pipeline must select at least one feature"
@@ -24,9 +21,7 @@ def test_run_pipeline_on_synthetic_dir(synthetic_data_dir):
 
 def test_run_pipeline_writes_csv(synthetic_data_dir, tmp_path):
     out = tmp_path / "nested" / "results.csv"
-    table, _, _ = run_pipeline(
-        data_dir=synthetic_data_dir, tune=False, output_csv=out
-    )
+    table, _, _ = run_pipeline(data_dir=synthetic_data_dir, tune=False, output_csv=out)
     assert out.exists()
     written = pd.read_csv(out)
     # Round-trips: same number of rows as the in-memory table.
@@ -35,9 +30,7 @@ def test_run_pipeline_writes_csv(synthetic_data_dir, tmp_path):
 
 
 def test_run_pipeline_with_sample_frac(synthetic_data_dir):
-    table, _, _ = run_pipeline(
-        data_dir=synthetic_data_dir, sample_frac=0.5, tune=False
-    )
+    table, _, _ = run_pipeline(data_dir=synthetic_data_dir, sample_frac=0.5, tune=False)
     assert len(table) == 6
 
 

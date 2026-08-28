@@ -76,12 +76,14 @@ def main() -> None:
         "--sample",
         type=float,
         default=None,
-        help="Fraction of games to use for fast iteration (e.g. 0.2). Omit for full data.",
+        help="Fraction of games to use for fast iteration (e.g. 0.2). Omit for all.",
     )
     parser.add_argument(
         "--no-tune", action="store_true", help="Skip grid search (quick smoke test)."
     )
-    parser.add_argument("--output-csv", default=None, help="Optional path to save results.")
+    parser.add_argument(
+        "--output-csv", default=None, help="Optional path to save results."
+    )
     parser.add_argument("--random-state", type=int, default=RANDOM_STATE)
     args = parser.parse_args()
 
