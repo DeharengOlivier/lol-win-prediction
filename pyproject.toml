@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lol-win-prediction"
+version = "0.1.0"
+description = "Per-role League of Legends win prediction from a single player's end-of-game statistics, with a leakage-free pipeline."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Olivier Dehareng" }]
+keywords = ["machine-learning", "xgboost", "esports", "league-of-legends", "data-leakage"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# The runtime needs exactly these four. Everything else (SHAP, matplotlib,
+# seaborn, jupyter) belongs to the notebook, which is a narrative layer, not a
+# dependency of the pipeline.
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+]
+
+[project.optional-dependencies]
+notebook = ["shap>=0.44", "matplotlib>=3.7", "seaborn>=0.13", "jupyter>=1.0", "nbformat>=5.9"]
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "pip-audit", "pandas-stubs"]
+
+[project.urls]
+Homepage = "https://github.com/DeharengOlivier/lol-win-prediction"
+
+[project.scripts]
+lolwin = "lolwin.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# PEP 561: ship the type information rather than making consumers guess it.
+[tool.setuptools.package-data]
+lolwin = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# A warning nobody reads is a warning hiding a real one. The pipeline produced
+# four RuntimeWarnings from NaN propagation before the boundary was validated;
+# that must never be able to pass silently again.
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 90
+src = ["src", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import order
+    "B",    # bugbear: the mistakes that become defects
+    "UP",   # pyupgrade
+    "SIM",  # obvious simplifications
+    "RUF",  # ruff's own checks
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into private helpers on purpose, to exercise the pieces that the
+# public API composes.
+"tests/*" = ["SLF001"]
+
+[tool.mypy]
+files = ["src"]
+strict = true
+
+# Neither scikit-learn nor xgboost ships type information.
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "xgboost.*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/lolwin"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]

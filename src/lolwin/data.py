@@ -21,8 +21,10 @@ from pathlib import Path
 
 import pandas as pd
 
-# Default location: a git-ignored ``data/`` folder at the repo root.
-DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+# Default location: a git-ignored ``data/`` folder in the working directory.
+# Deliberately relative to the caller and not to ``__file__``: once the package
+# is installed, ``__file__`` points inside site-packages, where no dataset lives.
+DEFAULT_DATA_DIR = Path("data")
 
 PLAYERS_FILE = "game_players_stats.csv"
 METADATA_FILE = "game_metadata.csv"

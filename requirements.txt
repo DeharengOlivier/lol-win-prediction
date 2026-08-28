@@ -1,25 +1,38 @@
-# Core data + ML stack (versions pinned to a verified, working set)
-pandas>=2.0
-numpy>=1.24
-scikit-learn>=1.3
-xgboost>=2.0
-shap>=0.44
-
-# Visualisation
-matplotlib>=3.7
-seaborn>=0.13
-
-# Notebook
-jupyter>=1.0
-nbformat>=5.9
-
-# Tests
-pytest>=7.0
-
-# NOTE: tensorflow/keras is intentionally NOT required. The original notebook
-# benchmarked a small Keras net, but it is optional and was dropped here (no
-# wheels for the local Python 3.14 toolchain, and XGBoost already wins). The
-# package and pipeline run fully without it.
+# Pinned lock of the exact set this project was verified against.
 #
+# The *declared* dependencies (with their supported floors) live in
+# pyproject.toml. This file exists so a reader can reproduce the published
+# numbers on the same versions rather than on whatever resolves today.
+#
+# Install the project itself, not just this file:
+#     pip install -e ".[dev,notebook]"    # development
+#     pip install -r requirements.txt     # the exact verified set
+
+# Runtime
+pandas==3.0.3
+numpy==2.4.6
+scikit-learn==1.9.0
+xgboost==3.3.0
+scipy==1.17.1
+
+# Notebook narrative layer (optional at runtime)
+shap==0.52.0
+matplotlib==3.11.0
+seaborn==0.13.2
+jupyter==1.1.1
+nbformat==5.10.4
+
+# Development
+pytest==9.1.0
+pytest-cov==7.1.0
+ruff==0.16.5
+mypy==2.3.1
+pip-audit==2.10.1
+pandas-stubs==3.0.5.260730
+
 # macOS only: XGBoost needs the OpenMP runtime. If you hit a libomp error,
 # install it with:  brew install libomp
+#
+# tensorflow/keras is deliberately absent. The original notebook benchmarked a
+# small Keras net; it was dropped (XGBoost wins on this tabular task) and
+# nothing in the package imports it.

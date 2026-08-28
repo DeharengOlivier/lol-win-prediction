@@ -8,17 +8,13 @@ of the multi-hundred-MB CSVs, which are not committed.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-# Make ``import lolwin`` work without installing the package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from lolwin import ROLES  # noqa: E402
+from lolwin import ROLES
 
 
 def _make_synthetic_players(n_games: int = 400, seed: int = 0) -> pd.DataFrame:
