@@ -28,7 +28,7 @@ nbformat==5.10.4
 # writing. Pinned to the fixed releases so a fresh install of this lock is clean.
 jupyterlab==4.6.3
 mistune==3.3.4
-pillow==12.3.0
+pillow==13.0.0
 
 # Development
 pytest==9.1.0
